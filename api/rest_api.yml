@@ -1,0 +1,918 @@
+openapi: 3.2.0
+info:
+  title: Social network for travelers
+  description: API specification of a social network for travelers.
+  version: 1.0.0
+servers:
+  - url: https://api.example.com/v1
+    name: production
+    description: Production server
+tags:
+  - name: auth
+    summary: Authorization
+    description: Obtaining, refreshing and revoking tokens.
+  - name: users
+    summary: Users
+    description: Registration, following and unfollowing.
+  - name: posts
+    summary: Posts
+    description: Publishing posts, feeds, likes and comments.
+  - name: uploads
+    summary: Uploads
+    description: Uploading photos for posts.
+  - name: locations
+    summary: Locations
+    description: Search for popular travel locations.
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      tags:
+        - auth
+      summary: Get a refresh token.
+      description: >-
+        Authenticates the user by username and password and issues a refresh
+        token together with the first access token.
+      operationId: getRefreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '200':
+          description: Tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid username or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /auth/refresh:
+    post:
+      tags:
+        - auth
+      summary: Get an access token.
+      description: >-
+        Exchanges a refresh token for a new access token. The refresh token is
+        rotated: the old one becomes invalid.
+      operationId: getAuthToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshToken'
+      responses:
+        '200':
+          description: Tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Refresh token is invalid, expired or revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /auth/logout:
+    post:
+      tags:
+        - auth
+      summary: Log out.
+      description: Revokes the refresh token of the current session.
+      operationId: logout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshToken'
+      responses:
+        '204':
+          description: Session closed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /users:
+    post:
+      tags:
+        - users
+      summary: Create a user.
+      operationId: createUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '201':
+          description: User created
+          headers:
+            Location:
+              description: URL of the created user
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Username is already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /users/{user_id}/follow:
+    put:
+      tags:
+        - users
+      summary: Follow a user.
+      description: >-
+        Subscribes the current user to the given user. Idempotent: repeating the
+        request for an already followed user changes nothing and also returns
+        `204`.
+      operationId: follow
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: The current user follows the given user
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+    delete:
+      tags:
+        - users
+      summary: Unfollow a user.
+      description: >-
+        Unsubscribes the current user from the given user. Idempotent: repeating
+        the request for a user that is not followed changes nothing and also
+        returns `204`.
+      operationId: unfollow
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: The current user does not follow the given user
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /uploads/presigned-urls:
+    post:
+      tags:
+        - uploads
+      summary: Get presigned URLs for uploading photos.
+      description: >-
+        Returns one presigned URL per file, in the same order as in the request.
+        The client uploads each photo with an HTTP `PUT` to `upload_url`, sending
+        the declared `Content-Type`, and then passes `image_url` to post
+        creation.
+      operationId: getPresignedUrls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignedUrlsRequest'
+      responses:
+        '200':
+          description: Presigned URLs issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedUrlsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /posts:
+    post:
+      tags:
+        - posts
+      summary: Create a post.
+      description: >-
+        Publishes a post with previously uploaded photos. The travel location is
+        resolved by the server from the coordinates.
+      operationId: createPost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePostRequest'
+      responses:
+        '201':
+          description: Post created
+          headers:
+            Location:
+              description: URL of the created post
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+    get:
+      tags:
+        - posts
+      summary: Get a feed of posts.
+      description: |-
+        Returns a page of 10 posts in reverse chronological order.
+
+        Exactly one filter selects the feed:
+        - `is_followees=true` - feed of the users the current user follows;
+        - `user_id` - feed of the given user (own feed when it is the current user);
+        - `location_id` - posts from the given travel location.
+
+        The filters are mutually exclusive.
+      operationId: getPosts
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - name: is_followees
+          in: query
+          description: Return the feed based on the subscriptions of the current user.
+          schema:
+            type: boolean
+        - name: user_id
+          in: query
+          description: Return posts published by the given user.
+          schema:
+            type: string
+            format: uuid
+        - name: location_id
+          in: query
+          description: Return posts from the given travel location.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Page of posts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /posts/{post_id}:
+    get:
+      tags:
+        - posts
+      summary: Get a post.
+      operationId: getPost
+      parameters:
+        - $ref: '#/components/parameters/PostId'
+      responses:
+        '200':
+          description: Post
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /posts/{post_id}/like:
+    put:
+      tags:
+        - posts
+      summary: Like a post.
+      description: >-
+        Puts a like of the current user on the post. Idempotent: repeating the
+        request for an already liked post changes nothing and also returns
+        `204`.
+      operationId: likePost
+      parameters:
+        - $ref: '#/components/parameters/PostId'
+      responses:
+        '204':
+          description: The post is liked by the current user
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+    delete:
+      tags:
+        - posts
+      summary: Remove a like from a post.
+      description: >-
+        Removes the like of the current user from the post. Idempotent:
+        repeating the request for a post that is not liked changes nothing and
+        also returns `204`.
+      operationId: unlikePost
+      parameters:
+        - $ref: '#/components/parameters/PostId'
+      responses:
+        '204':
+          description: The post is not liked by the current user
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /posts/{post_id}/comments:
+    post:
+      tags:
+        - posts
+      summary: Comment a post.
+      description: Only flat commenting is supported - a comment always belongs to the post itself.
+      operationId: commentPost
+      parameters:
+        - $ref: '#/components/parameters/PostId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommentRequest'
+      responses:
+        '201':
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+    get:
+      tags:
+        - posts
+      summary: Get comments of a post.
+      description: Returns a page of 10 comments, newest first.
+      operationId: getPostComments
+      parameters:
+        - $ref: '#/components/parameters/PostId'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Page of comments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /locations:
+    get:
+      tags:
+        - locations
+      summary: Search for popular travel locations.
+      description: >-
+        Returns up to 10 locations matching the search string, the most popular
+        first. Posts from a location are loaded with `GET /posts?location_id=`.
+      operationId: getLocations
+      parameters:
+        - name: search_string
+          in: query
+          description: Text to search in location titles.
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+            examples: [Байкал]
+      responses:
+        '200':
+          description: Found locations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+components:
+  parameters:
+    PostId:
+      name: post_id
+      in: path
+      description: Post identifier
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: user_id
+      in: path
+      description: User identifier
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      description: >-
+        Opaque cursor taken from `next_cursor` of the previous page. Omit it to
+        load the first page.
+      schema:
+        type: string
+  schemas:
+    Credentials:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 32
+          examples: [traveler]
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          writeOnly: true
+      required:
+        - username
+        - password
+    RefreshToken:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+      required:
+        - refresh_token
+    TokenPair:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: Short-lived JWT passed in the `Authorization` header.
+        refresh_token:
+          type: string
+          description: Long-lived token used to obtain new access tokens.
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          format: int32
+          description: Access token lifetime in seconds.
+          examples: [900]
+      required:
+        - access_token
+        - refresh_token
+        - token_type
+        - expires_in
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+          maxLength: 32
+          examples: [traveler]
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - username
+        - created_at
+    Author:
+      type: object
+      description: Short user info embedded into posts and comments.
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+          maxLength: 32
+          examples: [traveler]
+      required:
+        - id
+        - username
+    PresignedUrlsRequest:
+      type: object
+      properties:
+        files:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/UploadFile'
+      required:
+        - files
+    UploadFile:
+      type: object
+      properties:
+        content_type:
+          type: string
+          enum:
+            - image/jpeg
+            - image/png
+            - image/webp
+        size:
+          type: integer
+          format: int32
+          description: File size in bytes, up to 1 MB.
+          minimum: 1
+          maximum: 1048576
+          examples: [734003]
+      required:
+        - content_type
+        - size
+    PresignedUrlsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          description: Presigned URLs in the order of the requested files.
+          items:
+            $ref: '#/components/schemas/PresignedUrl'
+      required:
+        - items
+    PresignedUrl:
+      type: object
+      properties:
+        upload_url:
+          type: string
+          format: uri
+          description: URL for uploading the file with an HTTP `PUT`.
+        image_url:
+          type: string
+          format: uri
+          description: URL of the uploaded photo to pass to post creation.
+        expires_at:
+          type: string
+          format: date-time
+          description: Moment after which `upload_url` stops working.
+      required:
+        - upload_url
+        - image_url
+        - expires_at
+    CreatePostRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          maxLength: 2000
+          examples: [Рассвет на Ольхоне]
+        lat:
+          $ref: '#/components/schemas/Latitude'
+        lon:
+          $ref: '#/components/schemas/Longitude'
+        image_urls:
+          type: array
+          description: >-
+            `image_url` values of the uploaded photos in the order they are
+            shown in the post.
+          minItems: 1
+          maxItems: 5
+          items:
+            type: string
+            format: uri
+      required:
+        - description
+        - lat
+        - lon
+        - image_urls
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        author:
+          $ref: '#/components/schemas/Author'
+        description:
+          type: string
+          maxLength: 2000
+        images:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/Image'
+        location:
+          $ref: '#/components/schemas/Location'
+        lat:
+          $ref: '#/components/schemas/Latitude'
+        lon:
+          $ref: '#/components/schemas/Longitude'
+        like_count:
+          type: integer
+          format: int32
+          minimum: 0
+        comment_count:
+          type: integer
+          format: int32
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - author
+        - description
+        - images
+        - location
+        - lat
+        - lon
+        - like_count
+        - comment_count
+        - created_at
+    Image:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+          description: URL of the original photo on the CDN.
+        preview_url:
+          type: string
+          format: uri
+          description: URL of the reduced photo shown in feeds.
+        position:
+          type: integer
+          format: int32
+          description: Zero-based position of the photo in the post.
+          minimum: 0
+          maximum: 4
+        width:
+          type: integer
+          format: int32
+          description: Width of the original photo in pixels.
+        height:
+          type: integer
+          format: int32
+          description: Height of the original photo in pixels.
+      required:
+        - id
+        - url
+        - preview_url
+        - position
+        - width
+        - height
+    PostPage:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/Post'
+        next_cursor:
+          $ref: '#/components/schemas/NextCursor'
+      required:
+        - items
+        - next_cursor
+    CreateCommentRequest:
+      type: object
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required:
+        - body
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        post_id:
+          type: string
+          format: uuid
+        author:
+          $ref: '#/components/schemas/Author'
+        body:
+          type: string
+          maxLength: 2000
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - post_id
+        - author
+        - body
+        - created_at
+    CommentPage:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/Comment'
+        next_cursor:
+          $ref: '#/components/schemas/NextCursor'
+      required:
+        - items
+        - next_cursor
+    Location:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_title:
+          type: string
+          maxLength: 255
+          examples: [Озеро Байкал]
+        lat:
+          $ref: '#/components/schemas/Latitude'
+        lon:
+          $ref: '#/components/schemas/Longitude'
+      required:
+        - id
+        - display_title
+        - lat
+        - lon
+    LocationList:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/Location'
+      required:
+        - items
+    Latitude:
+      type: number
+      format: double
+      minimum: -90
+      maximum: 90
+      examples: [53.1561]
+    Longitude:
+      type: number
+      format: double
+      minimum: -180
+      maximum: 180
+      examples: [107.3414]
+    NextCursor:
+      type:
+        - string
+        - 'null'
+      description: Cursor of the next page, `null` when there are no more items.
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          examples: [validation_error]
+        message:
+          type: string
+          examples: [description must be at most 2000 characters long]
+      required:
+        - code
+        - message
+  responses:
+    BadRequest:
+      description: Request is malformed or violates the limits
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Access token is missing, invalid or expired
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooManyRequests:
+      description: Rate limit or daily limit is exceeded
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before repeating the request
+          schema:
+            type: integer
+            format: int32
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnexpectedError:
+      description: Unexpected error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
